@@ -73,8 +73,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, checkServerServiceCmd()
 
 	case tailscaleDoneMsg:
-		m.resultErr = msg.err
-		m.page = pageMenu
+		// "already stopped/started" is informational, not an error
+		if msg.err != nil && strings.Contains(msg.err.Error(), "already") {
+			m.resultLines = append(m.resultLines, styleDim.Render("  "+msg.err.Error()))
+			m.resultErr = nil
+		} else {
+			m.resultErr = msg.err
+		}
+		// stay on result page so user can read the output, re-check status in background
 		return m, checkTailscaleCmd()
 
 	case tickMsg:
