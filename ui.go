@@ -13,38 +13,33 @@ type page int
 
 const (
 	pageMenu page = iota
-	pageServer
-	pageSetup
+	pageResult
 )
 
 type model struct {
-	page      page
-	cursor    int
-	config    *Config
-	tsStatus  tailscaleStatus
-	serverLog []string
-	logCh     chan string
-	animFrame int
-}
-
-type serverLogMsg string
-type tickMsg struct{}
-
-var menuItems = []string{
-	"Start server",
-	"Setup Tailscale",
-	"Show token",
-	"Quit",
+	page         page
+	cursor       int
+	config       *Config
+	tsStatus     tailscaleStatus
+	srvStatus    serverStatus
+	resultLines  []string
+	resultErr    error
+	animFrame    int
 }
 
 func newModel(cfg *Config) model {
-	return model{
-		config: cfg,
-	}
+	return model{config: cfg}
 }
 
 func (m model) Init() tea.Cmd {
-	return checkTailscaleCmd()
+	return tea.Batch(checkTailscaleCmd(), checkServerServiceCmd())
+}
+
+func (m model) menuItems() []string {
+	if m.srvStatus.running {
+		return []string{"Stop server", "Connection info", "Setup Tailscale", "Quit"}
+	}
+	return []string{"Start server", "Connection info", "Setup Tailscale", "Quit"}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -52,67 +47,82 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tailscaleCheckMsg:
 		m.tsStatus = tailscaleStatus(msg)
-		return m, nil
+
+	case serverStatusMsg:
+		m.srvStatus = serverStatus(msg)
+
+	case serviceActionDoneMsg:
+		m.resultErr = msg.err
+		return m, checkServerServiceCmd()
 
 	case tailscaleDoneMsg:
+		m.resultErr = msg.err
 		m.page = pageMenu
 		return m, checkTailscaleCmd()
 
-	case serverLogMsg:
-		m.serverLog = append(m.serverLog, string(msg))
-		if len(m.serverLog) > 50 {
-			m.serverLog = m.serverLog[len(m.serverLog)-50:]
-		}
-		return m, readLogCmd(m.logCh)
-
 	case tickMsg:
 		m.animFrame++
-		if m.page == pageServer {
-			return m, tickCmd()
-		}
-		return m, nil
+		return m, tickCmd()
 
 	case tea.KeyMsg:
 		switch m.page {
 		case pageMenu:
 			return m.updateMenu(msg)
-		case pageServer:
-			return m.updateServer(msg)
+		case pageResult:
+			switch msg.String() {
+			case "enter", "esc", "q":
+				m.page = pageMenu
+				m.resultLines = nil
+				m.resultErr = nil
+			}
 		}
 	}
 	return m, nil
 }
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	items := m.menuItems()
 	switch msg.String() {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
 	case "down", "j":
-		if m.cursor < len(menuItems)-1 {
+		if m.cursor < len(items)-1 {
 			m.cursor++
 		}
 	case "enter", " ":
-		switch menuItems[m.cursor] {
+		selected := items[m.cursor]
+		switch selected {
 		case "Start server":
-			m.page = pageServer
-			m.serverLog = nil
-			ch := make(chan string, 64)
-			m.logCh = ch
-			return m, tea.Batch(
-				startServerCmd(m.config, ch),
-				readLogCmd(ch),
-				tickCmd(),
-			)
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  starting server service...")}
+			return m, startServiceCmd()
+		case "Stop server":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  stopping server service...")}
+			return m, stopServiceCmd()
 		case "Setup Tailscale":
-			m.page = pageSetup
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  installing Tailscale...")}
 			return m, installTailscaleCmd()
-		case "Show token":
-			m.serverLog = []string{"  token: " + m.config.Token}
-			// just show briefly in server view
-			m.page = pageServer
-			return m, nil
+		case "Connection info":
+			host := m.tsStatus.ip
+			if host == "" {
+				host = "your-server-ip"
+			}
+			addr := fmt.Sprintf("%s:%d", host, m.config.Port)
+			connStr := fmt.Sprintf("zipp nest add %s %s", addr, m.config.Token)
+			m.page = pageResult
+			m.resultLines = []string{
+				"",
+				"  " + styleDim.Render("address  ") + styleNormal.Render(addr),
+				"  " + styleDim.Render("token    ") + styleAccent.Render(m.config.Token),
+				"",
+				styleDim.Render("  run this on your other machine:"),
+				"",
+				"  " + styleSelected.Render(connStr),
+			}
 		case "Quit":
 			return m, tea.Quit
 		}
@@ -122,20 +132,10 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateServer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "esc":
-		m.page = pageMenu
-		m.serverLog = nil
-		m.logCh = nil
-	}
-	return m, nil
-}
-
 func (m model) View() string {
 	switch m.page {
-	case pageServer, pageSetup:
-		return m.viewServer()
+	case pageResult:
+		return m.viewResult()
 	default:
 		return m.viewMenu()
 	}
@@ -146,6 +146,15 @@ func (m model) viewMenu() string {
 	b.WriteString(renderHeader())
 	b.WriteString("\n")
 
+	// server status
+	srvLine := "  Server     "
+	if m.srvStatus.running {
+		srvLine += styleSuccess.Render("● running") + styleDim.Render("  ("+m.srvStatus.method+")")
+	} else {
+		srvLine += styleDim.Render("○ stopped")
+	}
+	b.WriteString(srvLine + "\n")
+
 	// tailscale status
 	tsLine := "  Tailscale  "
 	if m.tsStatus.installed && m.tsStatus.running {
@@ -155,62 +164,46 @@ func (m model) viewMenu() string {
 	} else {
 		tsLine += styleError.Render("○ not installed")
 	}
-	b.WriteString(styleDim.Render(tsLine) + "\n")
-	b.WriteString("\n")
+	b.WriteString(tsLine + "\n\n")
 
-	for i, item := range menuItems {
+	items := m.menuItems()
+	for i, item := range items {
 		if i == m.cursor {
-			b.WriteString(styleSelected.Render("▸ " + item))
+			b.WriteString(styleSelected.Render("▸ "+item) + "\n")
 		} else {
-			b.WriteString(styleNormal.Render("  " + item))
+			b.WriteString(styleNormal.Render("  "+item) + "\n")
 		}
-		b.WriteString("\n")
 	}
 
 	b.WriteString(styleHint.Render("\n  ↑↓ navigate · enter select · q quit"))
 	return b.String()
 }
 
-func (m model) viewServer() string {
+func (m model) viewResult() string {
 	var b strings.Builder
 	b.WriteString(renderHeader())
 	b.WriteString("\n")
 
-	buzzFrames := []string{"bzz   ", " bzz  ", "  bzz ", "   bzz"}
-	if m.page == pageServer {
-		b.WriteString(styleDim.Render("  " + buzzFrames[m.animFrame%len(buzzFrames)]) + "\n\n")
-	}
+	buzz := []string{"bzz   ", " bzz  ", "  bzz ", "   bzz"}
+	b.WriteString(styleDim.Render("  "+buzz[m.animFrame%len(buzz)]) + "\n\n")
 
-	for _, line := range m.serverLog {
+	for _, line := range m.resultLines {
 		b.WriteString(line + "\n")
 	}
 
-	if m.page == pageServer {
-		b.WriteString(styleHint.Render("\n  q / esc  back to menu"))
+	if m.resultErr != nil {
+		b.WriteString("\n" + styleError.Render("  error: "+m.resultErr.Error()) + "\n")
+	} else if len(m.resultLines) > 0 {
+		b.WriteString("\n" + styleSuccess.Render("  ✓ done") + "\n")
 	}
+
+	b.WriteString(styleHint.Render("\n  enter / esc  back"))
 	return b.String()
 }
 
 // — cmds —
 
-type serverErrMsg struct{ err error }
-
-func startServerCmd(cfg *Config, ch chan string) tea.Cmd {
-	return func() tea.Msg {
-		err := startServer(cfg, ch)
-		return serverErrMsg{err: err}
-	}
-}
-
-func readLogCmd(ch chan string) tea.Cmd {
-	return func() tea.Msg {
-		line, ok := <-ch
-		if !ok {
-			return nil
-		}
-		return serverLogMsg(line)
-	}
-}
+type tickMsg struct{}
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
@@ -229,5 +222,6 @@ func runUI(cfg *Config) error {
 	return err
 }
 
-// placeholder so fmt is used
-var _ = fmt.Sprintf
+func itoa(n int) string {
+	return fmt.Sprintf("%d", n)
+}

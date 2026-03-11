@@ -60,7 +60,7 @@ func (c *Config) save() error {
 }
 
 func generateToken() string {
-	b := make([]byte, 16)
+	b := make([]byte, 6)
 	rand.Read(b)
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b) // 12 chars
 }
