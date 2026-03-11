@@ -38,18 +38,25 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) menuItems() []string {
-	var tsItem string
+	var tsItems []string
 	if !m.tsStatus.installed {
-		tsItem = "Setup Tailscale"
+		tsItems = []string{"Setup Tailscale"}
+	} else if !m.tsStatus.loggedIn {
+		tsItems = []string{"Login to Tailscale"}
 	} else if m.tsStatus.running {
-		tsItem = "Disconnect Tailscale"
+		tsItems = []string{"Disconnect Tailscale", "Logout from Tailscale"}
 	} else {
-		tsItem = "Connect Tailscale"
+		tsItems = []string{"Connect Tailscale", "Logout from Tailscale"}
 	}
+	var items []string
 	if m.srvStatus.running {
-		return []string{"Stop server", "Connection info", tsItem, "Quit"}
+		items = []string{"Stop server", "Connection info"}
+	} else {
+		items = []string{"Start server", "Connection info"}
 	}
-	return []string{"Start server", "Connection info", tsItem, "Quit"}
+	items = append(items, tsItems...)
+	items = append(items, "Quit")
+	return items
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -128,15 +135,25 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resultLines = []string{styleDim.Render("  installing Tailscale...")}
 			return m, installTailscaleCmd()
 
+		case "Login to Tailscale":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  opening browser for login...")}
+			return m, tailscaleLoginCmd()
+
 		case "Connect Tailscale":
 			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  connecting to Tailscale...")}
+			m.resultLines = []string{styleDim.Render("  connecting...")}
 			return m, tailscaleUpCmd()
 
 		case "Disconnect Tailscale":
 			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  disconnecting from Tailscale...")}
+			m.resultLines = []string{styleDim.Render("  disconnecting...")}
 			return m, tailscaleDownCmd()
+
+		case "Logout from Tailscale":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  logging out...")}
+			return m, tailscaleLogoutCmd()
 
 		case "Connection info":
 			ip := m.tsStatus.ip
@@ -202,12 +219,14 @@ func (m model) viewMenu() string {
 
 	// tailscale status
 	tsLine := "  Tailscale  "
-	if m.tsStatus.installed && m.tsStatus.running {
-		tsLine += styleSuccess.Render("● connected  ") + styleDim.Render(m.tsStatus.ip)
-	} else if m.tsStatus.installed {
-		tsLine += styleWarning.Render("○ not connected")
-	} else {
+	if !m.tsStatus.installed {
 		tsLine += styleError.Render("○ not installed")
+	} else if m.tsStatus.running {
+		tsLine += styleSuccess.Render("● connected  ") + styleDim.Render(m.tsStatus.ip)
+	} else if m.tsStatus.loggedIn {
+		tsLine += styleWarning.Render("○ logged in, not connected")
+	} else {
+		tsLine += styleWarning.Render("○ logged out")
 	}
 	b.WriteString(tsLine + "\n\n")
 
