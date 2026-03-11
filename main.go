@@ -15,16 +15,7 @@ func main() {
 		case "--version", "-v":
 			fmt.Println("zipp-nest v" + version)
 			return
-		case "token":
-			cfg, err := loadConfig()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
-				os.Exit(1)
-			}
-			fmt.Println(cfg.Token)
-			return
 		case "serve":
-			// headless mode — no TUI, logs to stdout
 			cfg, err := loadConfig()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)
@@ -39,7 +30,6 @@ func main() {
 		}
 	}
 
-	// default: interactive TUI
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error loading config:", err)
@@ -53,13 +43,18 @@ func main() {
 }
 
 func printBanner(cfg *Config) {
+	ts := checkTailscale()
 	fmt.Println()
 	fmt.Println(`  ,~~~~~,`)
 	fmt.Println(` (~~~~~~~)  zipp-nest v` + version)
 	fmt.Println("  `~~~~~`")
 	fmt.Println()
-	fmt.Printf("  token:    %s\n", cfg.Token)
-	fmt.Printf("  port:     %d\n", cfg.Port)
-	fmt.Printf("  storage:  %s\n", cfg.StoragePath)
+	if ts.running {
+		fmt.Printf("  tailscale:  %s\n", ts.ip)
+		fmt.Printf("  address:    %s:%d\n", ts.ip, cfg.Port)
+	} else {
+		fmt.Println("  tailscale:  not connected")
+	}
+	fmt.Printf("  storage:    %s\n", cfg.StoragePath)
 	fmt.Println()
 }

@@ -22,11 +22,6 @@ func startServer(cfg *Config, logCh chan<- string) error {
 	})
 
 	mux.HandleFunc("/backups/", func(w http.ResponseWriter, r *http.Request) {
-		if !auth(cfg.Token, r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			logLine("✗", "auth", r.RemoteAddr+" — bad token")
-			return
-		}
 		job := strings.TrimPrefix(r.URL.Path, "/backups/")
 		job = strings.TrimSuffix(job, "/")
 		if job == "" {
@@ -47,10 +42,6 @@ func startServer(cfg *Config, logCh chan<- string) error {
 	srv := &http.Server{Addr: addr, Handler: mux}
 	logLine("●", "server", fmt.Sprintf("listening on %s", addr))
 	return srv.ListenAndServe()
-}
-
-func auth(token string, r *http.Request) bool {
-	return r.Header.Get("Authorization") == "Bearer "+token
 }
 
 func uploadHandler(cfg *Config, job string, w http.ResponseWriter, r *http.Request) {

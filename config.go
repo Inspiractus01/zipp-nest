@@ -1,15 +1,12 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 )
 
 type Config struct {
-	Token       string `json:"token"`
 	Port        int    `json:"port"`
 	StoragePath string `json:"storagePath"`
 }
@@ -37,7 +34,6 @@ func loadConfig() (*Config, error) {
 func defaultConfig() (*Config, error) {
 	home, _ := os.UserHomeDir()
 	cfg := &Config{
-		Token:       generateToken(),
 		Port:        9090,
 		StoragePath: filepath.Join(home, ".zipp-nest", "backups"),
 	}
@@ -57,10 +53,4 @@ func (c *Config) save() error {
 		return err
 	}
 	return os.WriteFile(path, data, 0600)
-}
-
-func generateToken() string {
-	b := make([]byte, 6)
-	rand.Read(b)
-	return hex.EncodeToString(b) // 12 chars
 }

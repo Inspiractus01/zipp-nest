@@ -17,22 +17,24 @@ const (
 )
 
 type model struct {
-	page         page
-	cursor       int
-	config       *Config
-	tsStatus     tailscaleStatus
-	srvStatus    serverStatus
-	resultLines  []string
-	resultErr    error
-	animFrame    int
+	page        page
+	cursor      int
+	config      *Config
+	tsStatus    tailscaleStatus
+	srvStatus   serverStatus
+	resultLines []string
+	resultErr   error
+	animFrame   int
 }
+
+type tickMsg struct{}
 
 func newModel(cfg *Config) model {
 	return model{config: cfg}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(checkTailscaleCmd(), checkServerServiceCmd())
+	return tea.Batch(checkTailscaleCmd(), checkServerServiceCmd(), tickCmd())
 }
 
 func (m model) menuItems() []string {
@@ -92,33 +94,51 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 	case "enter", " ":
-		selected := items[m.cursor]
-		switch selected {
+		switch items[m.cursor] {
 		case "Start server":
+			if !m.tsStatus.running {
+				m.page = pageResult
+				m.resultLines = []string{
+					"",
+					styleError.Render("  ✗ Tailscale is not connected"),
+					"",
+					styleDim.Render("  select \"Setup Tailscale\" first"),
+				}
+				return m, nil
+			}
 			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  starting server service...")}
+			m.resultLines = []string{styleDim.Render("  starting server...")}
 			return m, startServiceCmd()
+
 		case "Stop server":
 			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  stopping server service...")}
+			m.resultLines = []string{styleDim.Render("  stopping server...")}
 			return m, stopServiceCmd()
+
 		case "Setup Tailscale":
 			m.page = pageResult
 			m.resultLines = []string{styleDim.Render("  installing Tailscale...")}
 			return m, installTailscaleCmd()
+
 		case "Connection info":
-			host := m.tsStatus.ip
-			if host == "" {
-				host = "your-server-ip"
+			ip := m.tsStatus.ip
+			if ip == "" {
+				m.page = pageResult
+				m.resultLines = []string{
+					"",
+					styleError.Render("  ✗ Tailscale not connected — no IP available"),
+				}
+				return m, nil
 			}
-			code := buildConnCode(host, m.config.Port, m.config.Token)
+			addr := fmt.Sprintf("%s:%d", ip, m.config.Port)
 			m.page = pageResult
 			m.resultLines = []string{
 				"",
-				styleDim.Render("  paste this code into zipp → Nest:"),
+				styleDim.Render("  give this address to zipp on your other machine:"),
 				"",
-				"  " + styleAccent.Render(code),
+				"  " + styleAccent.Render(addr),
 			}
+
 		case "Quit":
 			return m, tea.Quit
 		}
@@ -197,10 +217,6 @@ func (m model) viewResult() string {
 	return b.String()
 }
 
-// — cmds —
-
-type tickMsg struct{}
-
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
@@ -216,8 +232,4 @@ func runUI(cfg *Config) error {
 	p := tea.NewProgram(newModel(cfg), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
-}
-
-func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
 }
