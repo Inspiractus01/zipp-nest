@@ -68,16 +68,17 @@ func (m model) menuItems() []string {
 
 	if !m.tsStatus.installed {
 		items = append(items, "Setup Tailscale")
-	} else if !m.tsStatus.loggedIn {
-		items = append(items, "Login to Tailscale")
-	} else {
-		items = append(items, "Logout from Tailscale")
+	} else if m.tsStatus.loggedIn {
 		if m.tsStatus.running {
 			items = append(items, "Disable Tailscale")
 		} else {
 			items = append(items, "Enable Tailscale")
 		}
+		items = append(items, "Logout from Tailscale")
+	} else {
+		items = append(items, "Login to Tailscale")
 	}
+
 	if m.updateInfo.hasUpdate {
 		items = append(items, "Run update")
 	}
