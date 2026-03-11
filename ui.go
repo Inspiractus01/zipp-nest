@@ -29,6 +29,13 @@ type model struct {
 }
 
 type tickMsg struct{}
+type periodicCheckMsg struct{}
+
+func periodicCheckCmd() tea.Cmd {
+	return tea.Tick(10*time.Second, func(time.Time) tea.Msg {
+		return periodicCheckMsg{}
+	})
+}
 
 func newModel(cfg *Config) model {
 	return model{config: cfg}
@@ -39,6 +46,7 @@ func (m model) Init() tea.Cmd {
 		checkTailscaleCmd(),
 		checkServerServiceCmd(),
 		tickCmd(),
+		periodicCheckCmd(),
 		func() tea.Msg { return updateCheckMsg(checkForUpdate()) },
 	)
 }
@@ -56,10 +64,13 @@ func (m model) menuItems() []string {
 		items = append(items, "Setup Tailscale")
 	} else if !m.tsStatus.loggedIn {
 		items = append(items, "Login to Tailscale")
-	} else if !m.tsStatus.running {
-		items = append(items, "Connect Tailscale", "Logout from Tailscale")
 	} else {
 		items = append(items, "Logout from Tailscale")
+		if m.tsStatus.running {
+			items = append(items, "Disable Tailscale")
+		} else {
+			items = append(items, "Enable Tailscale")
+		}
 	}
 	if m.updateInfo.hasUpdate {
 		items = append(items, "Run update")
@@ -82,6 +93,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Quit
+
+	case periodicCheckMsg:
+		return m, tea.Batch(checkTailscaleCmd(), checkServerServiceCmd(), periodicCheckCmd())
 
 	case tailscaleCheckMsg:
 		m.tsStatus = tailscaleStatus(msg)
@@ -150,7 +164,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case "Stop server":
 			m.resultErr = nil
-			return m, stopServerAndDisconnectCmd()
+			return m, stopServiceCmd()
 
 		case "Setup Tailscale":
 			m.page = pageResult
@@ -162,10 +176,15 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resultLines = []string{styleDim.Render("  opening browser for login...")}
 			return m, tailscaleLoginCmd()
 
-		case "Connect Tailscale":
+		case "Enable Tailscale":
 			m.page = pageResult
 			m.resultLines = []string{styleDim.Render("  connecting...")}
 			return m, tailscaleUpCmd()
+
+		case "Disable Tailscale":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  disconnecting...")}
+			return m, tailscaleDownCmd()
 
 		case "Logout from Tailscale":
 			m.resultErr = nil
