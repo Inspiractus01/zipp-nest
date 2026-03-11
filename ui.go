@@ -38,25 +38,20 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) menuItems() []string {
-	var tsItems []string
 	if !m.tsStatus.installed {
-		tsItems = []string{"Setup Tailscale"}
-	} else if !m.tsStatus.loggedIn {
-		tsItems = []string{"Login to Tailscale"}
-	} else if m.tsStatus.running {
-		tsItems = []string{"Disconnect Tailscale", "Logout from Tailscale"}
-	} else {
-		tsItems = []string{"Connect Tailscale", "Logout from Tailscale"}
+		return []string{"Setup Tailscale", "Quit"}
 	}
-	var items []string
+	if !m.tsStatus.loggedIn {
+		return []string{"Login to Tailscale", "Quit"}
+	}
+	if !m.tsStatus.running {
+		return []string{"Connect Tailscale", "Logout from Tailscale", "Quit"}
+	}
+	// Tailscale connected
 	if m.srvStatus.running {
-		items = []string{"Stop server", "Connection info"}
-	} else {
-		items = []string{"Start server", "Connection info"}
+		return []string{"Stop server", "Connection info", "Logout from Tailscale", "Quit"}
 	}
-	items = append(items, tsItems...)
-	items = append(items, "Quit")
-	return items
+	return []string{"Start server", "Connection info", "Logout from Tailscale", "Quit"}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -69,18 +64,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.srvStatus = serverStatus(msg)
 
 	case serviceActionDoneMsg:
-		m.resultErr = msg.err
-		return m, checkServerServiceCmd()
+		// return to menu immediately, re-check status in background
+		m.page = pageMenu
+		m.resultLines = nil
+		if msg.err != nil {
+			m.resultErr = msg.err
+		} else {
+			m.resultErr = nil
+		}
+		return m, tea.Batch(checkServerServiceCmd(), checkTailscaleCmd())
 
 	case tailscaleDoneMsg:
-		// "already stopped/started" is informational, not an error
-		if msg.err != nil && strings.Contains(msg.err.Error(), "already") {
-			m.resultLines = append(m.resultLines, styleDim.Render("  "+msg.err.Error()))
-			m.resultErr = nil
-		} else {
+		m.page = pageMenu
+		m.resultLines = nil
+		if msg.err != nil && !strings.Contains(msg.err.Error(), "already") {
 			m.resultErr = msg.err
+		} else {
+			m.resultErr = nil
 		}
-		// stay on result page so user can read the output, re-check status in background
 		return m, checkTailscaleCmd()
 
 	case tickMsg:
@@ -117,24 +118,12 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		switch items[m.cursor] {
 		case "Start server":
-			if !m.tsStatus.running {
-				m.page = pageResult
-				m.resultLines = []string{
-					"",
-					styleError.Render("  ✗ Tailscale is not connected"),
-					"",
-					styleDim.Render("  select \"Setup Tailscale\" first"),
-				}
-				return m, nil
-			}
-			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  starting server...")}
+			m.resultErr = nil
 			return m, startServiceCmd()
 
 		case "Stop server":
-			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  stopping server...")}
-			return m, stopServiceCmd()
+			m.resultErr = nil
+			return m, stopServerAndDisconnectCmd()
 
 		case "Setup Tailscale":
 			m.page = pageResult
@@ -151,14 +140,8 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resultLines = []string{styleDim.Render("  connecting...")}
 			return m, tailscaleUpCmd()
 
-		case "Disconnect Tailscale":
-			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  disconnecting...")}
-			return m, tailscaleDownCmd()
-
 		case "Logout from Tailscale":
-			m.page = pageResult
-			m.resultLines = []string{styleDim.Render("  logging out...")}
+			m.resultErr = nil
 			return m, tailscaleLogoutCmd()
 
 		case "Connection info":
@@ -236,12 +219,16 @@ func (m model) viewMenu() string {
 	}
 	b.WriteString(tsLine + "\n\n")
 
+	if m.resultErr != nil {
+		b.WriteString("  " + styleError.Render("✗ "+m.resultErr.Error()) + "\n\n")
+	}
+
 	items := m.menuItems()
 	for i, item := range items {
 		if i == m.cursor {
-			b.WriteString(styleSelected.Render("▸ "+item) + "\n")
+			b.WriteString("  " + styleSelected.Render("▸ "+item) + "\n")
 		} else {
-			b.WriteString(styleNormal.Render("  "+item) + "\n")
+			b.WriteString("  " + styleNormal.Render("  "+item) + "\n")
 		}
 	}
 

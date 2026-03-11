@@ -136,3 +136,12 @@ func stopServiceCmd() tea.Cmd {
 		return serviceActionDoneMsg{err: err}
 	}
 }
+
+func stopServerAndDisconnectCmd() tea.Cmd {
+	return func() tea.Msg {
+		err := uninstallService()
+		// best-effort tailscale down (works without sudo if operator is set)
+		exec.Command("tailscale", "down").Run()
+		return serviceActionDoneMsg{err: err}
+	}
+}
