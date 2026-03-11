@@ -1,10 +1,9 @@
 # Zipp Nest
 
 ```
-  )()(
- ( ●● )
-  \──/
-  /||\
+  ,~~~~~,
+ (~~~~~~~)
+  `~~~~~`
 ```
 
 Server-side companion for [Zipp](https://github.com/Inspiractus01/zipp). Run it on your remote machine and send backups to it over the network — no cloud, no subscription, just your own server.
