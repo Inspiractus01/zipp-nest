@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net"
 	"os/exec"
 	"runtime"
@@ -30,23 +31,38 @@ func checkTailscale() tailscaleStatus {
 	if _, err := exec.LookPath("tailscale"); err != nil {
 		return tailscaleStatus{}
 	}
-	statusOut, _ := exec.Command("tailscale", "status").CombinedOutput()
-	status := string(statusOut)
-	if strings.Contains(status, "Logged out") {
+	out, err := exec.Command("tailscale", "status", "--json").Output()
+	if err != nil {
+		return tailscaleStatus{installed: true}
+	}
+	var data struct {
+		BackendState string `json:"BackendState"`
+		Self         *struct {
+			TailscaleIPs []string `json:"TailscaleIPs"`
+		} `json:"Self"`
+	}
+	if err := json.Unmarshal(out, &data); err != nil {
+		return tailscaleStatus{installed: true}
+	}
+	switch data.BackendState {
+	case "NeedsLogin", "NoState", "NeedsMachineAuth":
+		return tailscaleStatus{installed: true, loggedIn: false, running: false}
+	case "Stopped":
+		return tailscaleStatus{installed: true, loggedIn: true, running: false}
+	case "Running":
+		ip := ""
+		if data.Self != nil {
+			for _, tsIP := range data.Self.TailscaleIPs {
+				if !strings.Contains(tsIP, ":") {
+					ip = tsIP
+					break
+				}
+			}
+		}
+		return tailscaleStatus{installed: true, loggedIn: true, running: true, ip: ip}
+	default:
 		return tailscaleStatus{installed: true, loggedIn: false, running: false}
 	}
-	if strings.Contains(status, "stopped") || strings.Contains(status, "Stopped") {
-		return tailscaleStatus{installed: true, loggedIn: true, running: false}
-	}
-	out, err := exec.Command("tailscale", "ip", "-4").Output()
-	if err != nil {
-		return tailscaleStatus{installed: true, loggedIn: true, running: false}
-	}
-	ip := strings.TrimSpace(string(out))
-	if ip == "" {
-		return tailscaleStatus{installed: true, loggedIn: true, running: false}
-	}
-	return tailscaleStatus{installed: true, loggedIn: true, running: true, ip: ip}
 }
 
 type tailscaleCheckMsg tailscaleStatus
