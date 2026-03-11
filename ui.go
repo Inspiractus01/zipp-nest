@@ -131,13 +131,24 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			addr := fmt.Sprintf("%s:%d", ip, m.config.Port)
+			code, codeErr := encodeNestCode(ip)
 			m.page = pageResult
-			m.resultLines = []string{
+			lines := []string{
 				"",
-				styleDim.Render("  give this address to zipp on your other machine:"),
+				styleDim.Render("  give this to zipp on your other machine:"),
 				"",
-				"  " + styleAccent.Render(addr),
 			}
+			if codeErr == nil {
+				lines = append(lines,
+					"  "+styleAccent.Render(code)+styleDim.Render("  ← short code"),
+					"",
+					styleDim.Render("  or full address:"),
+					"  "+styleDim.Render(addr),
+				)
+			} else {
+				lines = append(lines, "  "+styleAccent.Render(addr))
+			}
+			m.resultLines = lines
 
 		case "Quit":
 			return m, tea.Quit
