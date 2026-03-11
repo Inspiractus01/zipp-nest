@@ -22,6 +22,7 @@ type model struct {
 	config      *Config
 	tsStatus    tailscaleStatus
 	srvStatus   serverStatus
+	updateInfo  updateResult
 	resultLines []string
 	resultErr   error
 	animFrame   int
@@ -34,7 +35,12 @@ func newModel(cfg *Config) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(checkTailscaleCmd(), checkServerServiceCmd(), tickCmd())
+	return tea.Batch(
+		checkTailscaleCmd(),
+		checkServerServiceCmd(),
+		tickCmd(),
+		func() tea.Msg { return updateCheckMsg(checkForUpdate()) },
+	)
 }
 
 func (m model) menuItems() []string {
@@ -55,12 +61,27 @@ func (m model) menuItems() []string {
 	} else {
 		items = append(items, "Logout from Tailscale")
 	}
+	if m.updateInfo.hasUpdate {
+		items = append(items, "Run update")
+	}
 	items = append(items, "Quit")
 	return items
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case updateCheckMsg:
+		m.updateInfo = updateResult(msg)
+		return m, nil
+
+	case updateDoneMsg:
+		if msg.err != nil {
+			m.resultErr = msg.err
+			m.page = pageMenu
+			return m, nil
+		}
+		return m, tea.Quit
 
 	case tailscaleCheckMsg:
 		m.tsStatus = tailscaleStatus(msg)
@@ -173,6 +194,9 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.page = pageResult
 			m.resultLines = lines
 
+		case "Run update":
+			return m, runUpdateCmd()
+
 		case "Quit":
 			return m, tea.Quit
 		}
@@ -218,6 +242,10 @@ func (m model) viewMenu() string {
 	}
 	b.WriteString(tsLine + "\n\n")
 
+	if m.updateInfo.hasUpdate {
+		b.WriteString("  " + styleWarning.Render("● update available: v"+m.updateInfo.latest) + "\n\n")
+	}
+
 	if m.resultErr != nil {
 		b.WriteString("  " + styleError.Render("✗ "+m.resultErr.Error()) + "\n\n")
 	}
@@ -226,6 +254,8 @@ func (m model) viewMenu() string {
 	for i, item := range items {
 		if i == m.cursor {
 			b.WriteString("  " + styleSelected.Render("▸ "+item) + "\n")
+		} else if item == "Run update" {
+			b.WriteString("  " + styleWarning.Render("  "+item) + "\n")
 		} else {
 			b.WriteString("  " + styleNormal.Render("  "+item) + "\n")
 		}
