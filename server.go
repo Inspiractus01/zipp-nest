@@ -9,7 +9,11 @@ import (
 	"time"
 )
 
-func startServer(cfg *Config) error {
+var serverLogCh chan<- string
+
+func startServer(cfg *Config, logCh chan<- string) error {
+	serverLogCh = logCh
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -20,6 +24,7 @@ func startServer(cfg *Config) error {
 	mux.HandleFunc("/backups/", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(cfg.Token, r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			logLine("✗", "auth", r.RemoteAddr+" — bad token")
 			return
 		}
 		job := strings.TrimPrefix(r.URL.Path, "/backups/")
@@ -39,18 +44,13 @@ func startServer(cfg *Config) error {
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	fmt.Printf("  listening on %s\n\n", addr)
+	srv := &http.Server{Addr: addr, Handler: mux}
+	logLine("●", "server", fmt.Sprintf("listening on %s", addr))
 	return srv.ListenAndServe()
 }
 
 func auth(token string, r *http.Request) bool {
-	h := r.Header.Get("Authorization")
-	return h == "Bearer "+token
+	return r.Header.Get("Authorization") == "Bearer "+token
 }
 
 func uploadHandler(cfg *Config, job string, w http.ResponseWriter, r *http.Request) {
@@ -92,5 +92,10 @@ func listAllHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 }
 
 func logLine(symbol, job, msg string) {
-	fmt.Printf("  %s  %-20s  %s  %s\n", symbol, job, time.Now().Format("15:04:05"), msg)
+	line := fmt.Sprintf("  %s  %-16s  %s  %s", symbol, job, time.Now().Format("15:04:05"), msg)
+	if serverLogCh != nil {
+		serverLogCh <- line
+	} else {
+		fmt.Println(line)
+	}
 }
