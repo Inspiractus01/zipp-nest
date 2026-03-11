@@ -111,17 +111,13 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if host == "" {
 				host = "your-server-ip"
 			}
-			addr := fmt.Sprintf("%s:%d", host, m.config.Port)
-			connStr := fmt.Sprintf("zipp nest add %s %s", addr, m.config.Token)
+			code := buildConnCode(host, m.config.Port, m.config.Token)
 			m.page = pageResult
 			m.resultLines = []string{
 				"",
-				"  " + styleDim.Render("address  ") + styleNormal.Render(addr),
-				"  " + styleDim.Render("token    ") + styleAccent.Render(m.config.Token),
+				styleDim.Render("  paste this code into zipp → Nest:"),
 				"",
-				styleDim.Render("  run this on your other machine:"),
-				"",
-				"  " + styleSelected.Render(connStr),
+				"  " + styleAccent.Render(code),
 			}
 		case "Quit":
 			return m, tea.Quit
