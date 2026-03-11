@@ -30,18 +30,23 @@ func checkTailscale() tailscaleStatus {
 	if _, err := exec.LookPath("tailscale"); err != nil {
 		return tailscaleStatus{}
 	}
-	// connected?
-	out, err := exec.Command("tailscale", "ip", "-4").Output()
-	if err == nil {
-		ip := strings.TrimSpace(string(out))
-		if ip != "" {
-			return tailscaleStatus{installed: true, loggedIn: true, running: true, ip: ip}
-		}
-	}
-	// installed but not connected — check if logged in
 	statusOut, _ := exec.Command("tailscale", "status").CombinedOutput()
-	loggedIn := !strings.Contains(string(statusOut), "Logged out")
-	return tailscaleStatus{installed: true, loggedIn: loggedIn, running: false}
+	status := string(statusOut)
+	if strings.Contains(status, "Logged out") {
+		return tailscaleStatus{installed: true, loggedIn: false, running: false}
+	}
+	if strings.Contains(status, "stopped") || strings.Contains(status, "Stopped") {
+		return tailscaleStatus{installed: true, loggedIn: true, running: false}
+	}
+	out, err := exec.Command("tailscale", "ip", "-4").Output()
+	if err != nil {
+		return tailscaleStatus{installed: true, loggedIn: true, running: false}
+	}
+	ip := strings.TrimSpace(string(out))
+	if ip == "" {
+		return tailscaleStatus{installed: true, loggedIn: true, running: false}
+	}
+	return tailscaleStatus{installed: true, loggedIn: true, running: true, ip: ip}
 }
 
 type tailscaleCheckMsg tailscaleStatus
@@ -68,7 +73,7 @@ func installTailscaleCmd() tea.Cmd {
 
 // tailscale login — interactive, opens browser for auth
 func tailscaleLoginCmd() tea.Cmd {
-	return tea.ExecProcess(exec.Command("tailscale", "login"), func(err error) tea.Msg {
+	return tea.ExecProcess(exec.Command("sudo", "tailscale", "login"), func(err error) tea.Msg {
 		return tailscaleDoneMsg{err: err}
 	})
 }
