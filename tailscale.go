@@ -74,24 +74,16 @@ func tailscaleLogoutCmd() tea.Cmd {
 	}
 }
 
-// tailscale up — connect (non-interactive if already logged in)
+// tailscale up — connect (sudo needed on most Linux setups)
 func tailscaleUpCmd() tea.Cmd {
-	return func() tea.Msg {
-		out, err := exec.Command("tailscale", "up").CombinedOutput()
-		if err != nil {
-			return tailscaleDoneMsg{err: fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)}
-		}
-		return tailscaleDoneMsg{}
-	}
+	return tea.ExecProcess(exec.Command("sudo", "tailscale", "up"), func(err error) tea.Msg {
+		return tailscaleDoneMsg{err: err}
+	})
 }
 
 // tailscale down — disconnect, stay logged in
 func tailscaleDownCmd() tea.Cmd {
-	return func() tea.Msg {
-		out, err := exec.Command("tailscale", "down").CombinedOutput()
-		if err != nil {
-			return tailscaleDoneMsg{err: fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)}
-		}
-		return tailscaleDoneMsg{}
-	}
+	return tea.ExecProcess(exec.Command("sudo", "tailscale", "down"), func(err error) tea.Msg {
+		return tailscaleDoneMsg{err: err}
+	})
 }
