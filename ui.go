@@ -38,10 +38,18 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) menuItems() []string {
-	if m.srvStatus.running {
-		return []string{"Stop server", "Connection info", "Setup Tailscale", "Quit"}
+	var tsItem string
+	if !m.tsStatus.installed {
+		tsItem = "Setup Tailscale"
+	} else if m.tsStatus.running {
+		tsItem = "Disconnect Tailscale"
+	} else {
+		tsItem = "Connect Tailscale"
 	}
-	return []string{"Start server", "Connection info", "Setup Tailscale", "Quit"}
+	if m.srvStatus.running {
+		return []string{"Stop server", "Connection info", tsItem, "Quit"}
+	}
+	return []string{"Start server", "Connection info", tsItem, "Quit"}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -119,6 +127,16 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.page = pageResult
 			m.resultLines = []string{styleDim.Render("  installing Tailscale...")}
 			return m, installTailscaleCmd()
+
+		case "Connect Tailscale":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  connecting to Tailscale...")}
+			return m, tailscaleUpCmd()
+
+		case "Disconnect Tailscale":
+			m.page = pageResult
+			m.resultLines = []string{styleDim.Render("  disconnecting from Tailscale...")}
+			return m, tailscaleDownCmd()
 
 		case "Connection info":
 			ip := m.tsStatus.ip

@@ -48,3 +48,15 @@ func installTailscaleCmd() tea.Cmd {
 		return tailscaleDoneMsg{err: err}
 	})
 }
+
+func tailscaleUpCmd() tea.Cmd {
+	return tea.ExecProcess(exec.Command("tailscale", "up"), func(err error) tea.Msg {
+		return tailscaleDoneMsg{err: err}
+	})
+}
+
+func tailscaleDownCmd() tea.Cmd {
+	return tea.ExecProcess(exec.Command("tailscale", "down"), func(err error) tea.Msg {
+		return tailscaleDoneMsg{err: err}
+	})
+}
