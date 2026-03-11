@@ -8,22 +8,22 @@ import (
 
 const defaultNestPort = 9090
 
-// encodeNestCode encodes a Tailscale IP (100.x.x.x) into a short XXX-XXXX code.
-// Example: "100.86.253.68" → "570-0932"
+// encodeNestCode encodes any IPv4 address into a 10-digit decimal code XXXXX-XXXXX.
+// Example: "100.86.253.68" → "16834-22532"
+//          "192.168.1.5"   → "32322-35781"
 func encodeNestCode(ip string) (string, error) {
 	parts := strings.Split(ip, ".")
 	if len(parts) != 4 {
 		return "", fmt.Errorf("invalid IP")
 	}
-	octets := make([]int, 4)
-	for i, p := range parts {
+	var val uint32
+	for _, p := range parts {
 		n, err := strconv.Atoi(p)
 		if err != nil || n < 0 || n > 255 {
 			return "", fmt.Errorf("invalid IP")
 		}
-		octets[i] = n
+		val = val*256 + uint32(n)
 	}
-	val := octets[1]*65536 + octets[2]*256 + octets[3]
-	s := fmt.Sprintf("%07d", val)
-	return s[:3] + "-" + s[3:], nil
+	s := fmt.Sprintf("%010d", val)
+	return s[:5] + "-" + s[5:], nil
 }

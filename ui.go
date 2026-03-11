@@ -38,20 +38,25 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) menuItems() []string {
-	if !m.tsStatus.installed {
-		return []string{"Setup Tailscale", "Quit"}
-	}
-	if !m.tsStatus.loggedIn {
-		return []string{"Login to Tailscale", "Quit"}
-	}
-	if !m.tsStatus.running {
-		return []string{"Connect Tailscale", "Logout from Tailscale", "Quit"}
-	}
-	// Tailscale connected
+	var items []string
 	if m.srvStatus.running {
-		return []string{"Stop server", "Connection info", "Logout from Tailscale", "Quit"}
+		items = append(items, "Stop server")
+	} else {
+		items = append(items, "Start server")
 	}
-	return []string{"Start server", "Connection info", "Logout from Tailscale", "Quit"}
+	items = append(items, "Connection info")
+
+	if !m.tsStatus.installed {
+		items = append(items, "Setup Tailscale")
+	} else if !m.tsStatus.loggedIn {
+		items = append(items, "Login to Tailscale")
+	} else if !m.tsStatus.running {
+		items = append(items, "Connect Tailscale", "Logout from Tailscale")
+	} else {
+		items = append(items, "Logout from Tailscale")
+	}
+	items = append(items, "Quit")
+	return items
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -121,6 +126,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resultErr = nil
 			return m, startServiceCmd()
 
+
 		case "Stop server":
 			m.resultErr = nil
 			return m, stopServerAndDisconnectCmd()
@@ -145,33 +151,26 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tailscaleLogoutCmd()
 
 		case "Connection info":
-			ip := m.tsStatus.ip
-			if ip == "" {
-				m.page = pageResult
-				m.resultLines = []string{
-					"",
-					styleError.Render("  ✗ Tailscale not connected — no IP available"),
+			lines := []string{""}
+			addEntry := func(label, ip string) {
+				addr := fmt.Sprintf("%s:%d", ip, m.config.Port)
+				code, err := encodeNestCode(ip)
+				lines = append(lines, styleDim.Render("  "+label+":"))
+				if err == nil {
+					lines = append(lines, "  "+styleAccent.Render(code)+styleDim.Render("  ← code"))
 				}
-				return m, nil
+				lines = append(lines, styleDim.Render("  "+addr), "")
 			}
-			addr := fmt.Sprintf("%s:%d", ip, m.config.Port)
-			code, codeErr := encodeNestCode(ip)
+			if m.tsStatus.running {
+				addEntry("tailscale", m.tsStatus.ip)
+			}
+			if localIP := getLocalIP(); localIP != "" {
+				addEntry("local network", localIP)
+			}
+			if len(lines) == 1 {
+				lines = append(lines, styleError.Render("  ✗ no network address available"))
+			}
 			m.page = pageResult
-			lines := []string{
-				"",
-				styleDim.Render("  give this to zipp on your other machine:"),
-				"",
-			}
-			if codeErr == nil {
-				lines = append(lines,
-					"  "+styleAccent.Render(code)+styleDim.Render("  ← short code"),
-					"",
-					styleDim.Render("  or full address:"),
-					"  "+styleDim.Render(addr),
-				)
-			} else {
-				lines = append(lines, "  "+styleAccent.Render(addr))
-			}
 			m.resultLines = lines
 
 		case "Quit":

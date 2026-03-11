@@ -1,12 +1,23 @@
 package main
 
 import (
+	"net"
 	"os/exec"
 	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// getLocalIP returns the machine's outbound local IPv4 address.
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+}
 
 type tailscaleStatus struct {
 	installed bool
