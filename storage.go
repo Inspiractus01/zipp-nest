@@ -45,6 +45,33 @@ func listSnapshots(storagePath, job string) ([]string, error) {
 	return snaps, nil
 }
 
+func pruneSnapshotsServer(storagePath, job string, keep int) (int, error) {
+	dir := snapshotDir(storagePath, job)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var snaps []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tar.gz") {
+			snaps = append(snaps, e.Name())
+		}
+	}
+	sort.Strings(snaps) // oldest first
+	deleted := 0
+	for len(snaps) > keep {
+		if err := os.Remove(filepath.Join(dir, snaps[0])); err != nil {
+			return deleted, err
+		}
+		snaps = snaps[1:]
+		deleted++
+	}
+	return deleted, nil
+}
+
 func listJobs(storagePath string) ([]string, error) {
 	entries, err := os.ReadDir(storagePath)
 	if os.IsNotExist(err) {

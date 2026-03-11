@@ -33,6 +33,23 @@ func startServer(cfg *Config, logCh chan<- string) error {
 			uploadHandler(cfg, job, w, r)
 		case http.MethodGet:
 			listHandler(cfg, job, w, r)
+		case http.MethodDelete:
+			keep := 0
+			fmt.Sscanf(r.URL.Query().Get("keep"), "%d", &keep)
+			if keep <= 0 {
+				http.Error(w, "invalid keep param", http.StatusBadRequest)
+				return
+			}
+			deleted, err := pruneSnapshotsServer(cfg.StoragePath, job, keep)
+			if err != nil {
+				http.Error(w, "prune error", http.StatusInternalServerError)
+				return
+			}
+			if deleted > 0 {
+				logLine("✂", job, fmt.Sprintf("pruned %d old snapshot(s), keeping %d", deleted, keep))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]int{"deleted": deleted})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}

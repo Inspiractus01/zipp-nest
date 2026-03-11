@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -14,6 +15,7 @@ type page int
 const (
 	pageMenu page = iota
 	pageResult
+	pageSettings
 )
 
 type model struct {
@@ -26,6 +28,10 @@ type model struct {
 	resultLines []string
 	resultErr   error
 	animFrame   int
+
+	// settings form
+	settingsInputs []textinput.Model
+	settingsStep   int
 }
 
 type tickMsg struct{}
@@ -75,7 +81,7 @@ func (m model) menuItems() []string {
 	if m.updateInfo.hasUpdate {
 		items = append(items, "Run update")
 	}
-	items = append(items, "Quit")
+	items = append(items, "Settings", "Quit")
 	return items
 }
 
@@ -132,6 +138,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.page {
 		case pageMenu:
 			return m.updateMenu(msg)
+		case pageSettings:
+			return m.updateSettings(msg)
 		case pageResult:
 			switch msg.String() {
 			case "enter", "esc", "q":
@@ -216,6 +224,11 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "Run update":
 			return m, runUpdateCmd()
 
+		case "Settings":
+			m.settingsStep = 0
+			m.settingsInputs = newSettingsInputs(m.config)
+			m.page = pageSettings
+
 		case "Quit":
 			return m, tea.Quit
 		}
@@ -229,6 +242,8 @@ func (m model) View() string {
 	switch m.page {
 	case pageResult:
 		return m.viewResult()
+	case pageSettings:
+		return m.viewSettings()
 	default:
 		return m.viewMenu()
 	}
@@ -321,4 +336,79 @@ func runUI(cfg *Config) error {
 	p := tea.NewProgram(newModel(cfg), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+func newSettingsInputs(cfg *Config) []textinput.Model {
+	pathInput := textinput.New()
+	pathInput.Placeholder = "e.g. /mnt/backups or ~/zipp-nest/backups"
+	pathInput.SetValue(cfg.StoragePath)
+	pathInput.Width = 52
+	pathInput.Focus()
+
+	portInput := textinput.New()
+	portInput.Placeholder = "9090"
+	portInput.SetValue(fmt.Sprintf("%d", cfg.Port))
+	portInput.Width = 10
+
+	return []textinput.Model{pathInput, portInput}
+}
+
+func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.page = pageMenu
+		return m, nil
+	case "shift+tab":
+		if m.settingsStep > 0 {
+			m.settingsInputs[m.settingsStep].Blur()
+			m.settingsStep--
+			m.settingsInputs[m.settingsStep].Focus()
+			return m, textinput.Blink
+		}
+	case "enter":
+		if m.settingsStep < len(m.settingsInputs)-1 {
+			m.settingsInputs[m.settingsStep].Blur()
+			m.settingsStep++
+			m.settingsInputs[m.settingsStep].Focus()
+			return m, textinput.Blink
+		}
+		// save
+		path := strings.TrimSpace(m.settingsInputs[0].Value())
+		if path != "" {
+			m.config.StoragePath = path
+		}
+		port := 9090
+		fmt.Sscanf(m.settingsInputs[1].Value(), "%d", &port)
+		if port > 0 {
+			m.config.Port = port
+		}
+		m.config.save()
+		m.page = pageMenu
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.settingsInputs[m.settingsStep], cmd = m.settingsInputs[m.settingsStep].Update(msg)
+	return m, cmd
+}
+
+func (m model) viewSettings() string {
+	var b strings.Builder
+	b.WriteString(renderHeader())
+	b.WriteString("\n")
+
+	labels := []string{"Storage path", "Port"}
+	for i, label := range labels {
+		lStyle := styleDim
+		var val string
+		if i == m.settingsStep {
+			lStyle = lipgloss.NewStyle().Foreground(colorTealLight)
+			val = m.settingsInputs[i].View()
+		} else {
+			val = styleNormal.Render(m.settingsInputs[i].Value())
+		}
+		b.WriteString("  " + lStyle.Render(label+":") + "  " + val + "\n")
+	}
+
+	b.WriteString(styleHint.Render("\n  enter next · shift+tab back · esc cancel"))
+	return b.String()
 }
