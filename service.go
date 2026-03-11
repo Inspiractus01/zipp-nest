@@ -137,6 +137,18 @@ func stopServiceCmd() tea.Cmd {
 	}
 }
 
+func restartServiceCmd() tea.Cmd {
+	return func() tea.Msg {
+		uninstallService()
+		self, err := os.Executable()
+		if err != nil {
+			self = "zipp-nest"
+		}
+		err = installService(self)
+		return serviceActionDoneMsg{err: err}
+	}
+}
+
 func stopServerAndDisconnectCmd() tea.Cmd {
 	return func() tea.Msg {
 		err := uninstallService()

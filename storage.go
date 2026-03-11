@@ -89,6 +89,20 @@ func listJobs(storagePath string) ([]string, error) {
 	return jobs, nil
 }
 
+func readLogLines(n int) []string {
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, ".zipp-nest", "server.log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
+}
+
 func formatSize(b int64) string {
 	const unit = 1024
 	if b < unit {

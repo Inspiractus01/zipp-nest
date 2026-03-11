@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -99,11 +101,21 @@ func listAllHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobs)
 }
 
+func logFilePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".zipp-nest", "server.log")
+}
+
 func logLine(symbol, job, msg string) {
-	line := fmt.Sprintf("  %s  %-16s  %s  %s", symbol, job, time.Now().Format("15:04:05"), msg)
+	line := fmt.Sprintf("  %s  %-16s  %s  %s", symbol, job, time.Now().Format("2006-01-02 15:04:05"), msg)
 	if serverLogCh != nil {
 		serverLogCh <- line
 	} else {
 		fmt.Println(line)
+	}
+	// always append to log file
+	if f, err := os.OpenFile(logFilePath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		fmt.Fprintln(f, line)
+		f.Close()
 	}
 }

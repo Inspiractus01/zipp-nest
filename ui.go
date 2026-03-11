@@ -16,6 +16,7 @@ const (
 	pageMenu page = iota
 	pageResult
 	pageSettings
+	pageLog
 )
 
 type model struct {
@@ -32,6 +33,9 @@ type model struct {
 	// settings form
 	settingsInputs []textinput.Model
 	settingsStep   int
+
+	// logs
+	logLines []string
 }
 
 type tickMsg struct{}
@@ -82,7 +86,7 @@ func (m model) menuItems() []string {
 	if m.updateInfo.hasUpdate {
 		items = append(items, "Run update")
 	}
-	items = append(items, "Settings", "Quit")
+	items = append(items, "Logs", "Settings", "Quit")
 	return items
 }
 
@@ -139,6 +143,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.page {
 		case pageMenu:
 			return m.updateMenu(msg)
+		case pageLog:
+			m.page = pageMenu
+			return m, nil
 		case pageSettings:
 			return m.updateSettings(msg)
 		case pageResult:
@@ -225,6 +232,10 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "Run update":
 			return m, runUpdateCmd()
 
+		case "Logs":
+			m.logLines = readLogLines(40)
+			m.page = pageLog
+
 		case "Settings":
 			m.settingsStep = 0
 			m.settingsInputs = newSettingsInputs(m.config)
@@ -245,6 +256,8 @@ func (m model) View() string {
 		return m.viewResult()
 	case pageSettings:
 		return m.viewSettings()
+	case pageLog:
+		return m.viewLog()
 	default:
 		return m.viewMenu()
 	}
@@ -339,6 +352,23 @@ func runUI(cfg *Config) error {
 	return err
 }
 
+func (m model) viewLog() string {
+	var b strings.Builder
+	b.WriteString(renderHeader())
+	b.WriteString("\n")
+
+	if len(m.logLines) == 0 {
+		b.WriteString(styleDim.Render("  no log entries yet\n"))
+	} else {
+		for _, line := range m.logLines {
+			b.WriteString(styleNormal.Render(line) + "\n")
+		}
+	}
+
+	b.WriteString(styleHint.Render("\n  any key  back"))
+	return b.String()
+}
+
 func newSettingsInputs(cfg *Config) []textinput.Model {
 	pathInput := textinput.New()
 	pathInput.Placeholder = "e.g. /mnt/backups or ~/zipp-nest/backups"
@@ -385,6 +415,9 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.config.save()
 		m.page = pageMenu
+		if m.srvStatus.running {
+			return m, restartServiceCmd()
+		}
 		return m, nil
 	}
 	var cmd tea.Cmd
