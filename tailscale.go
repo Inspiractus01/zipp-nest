@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -63,15 +62,11 @@ func tailscaleLoginCmd() tea.Cmd {
 	})
 }
 
-// tailscale logout — non-interactive, expires node key
+// tailscale logout — needs sudo
 func tailscaleLogoutCmd() tea.Cmd {
-	return func() tea.Msg {
-		out, err := exec.Command("tailscale", "logout").CombinedOutput()
-		if err != nil {
-			return tailscaleDoneMsg{err: fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)}
-		}
-		return tailscaleDoneMsg{}
-	}
+	return tea.ExecProcess(exec.Command("sudo", "tailscale", "logout"), func(err error) tea.Msg {
+		return tailscaleDoneMsg{err: err}
+	})
 }
 
 // tailscale up — connect (sudo needed on most Linux setups)
