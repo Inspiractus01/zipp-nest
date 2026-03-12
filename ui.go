@@ -209,13 +209,11 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "Connection info":
 			lines := []string{""}
 			addEntry := func(label, ip string) {
-				addr := fmt.Sprintf("%s:%d", ip, m.config.Port)
 				code, err := encodeNestCode(ip)
 				lines = append(lines, styleDim.Render("  "+label+":"))
 				if err == nil {
-					lines = append(lines, "  "+styleAccent.Render(code)+styleDim.Render("  ← code"))
+					lines = append(lines, "  "+styleAccent.Render(code), "")
 				}
-				lines = append(lines, styleDim.Render("  "+addr), "")
 			}
 			if m.tsStatus.running {
 				addEntry("tailscale", m.tsStatus.ip)

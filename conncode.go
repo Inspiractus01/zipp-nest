@@ -8,9 +8,10 @@ import (
 
 const defaultNestPort = 9090
 
-// encodeNestCode encodes any IPv4 address into a 10-digit decimal code XXXXX-XXXXX.
-// Example: "100.86.253.68" → "16834-22532"
-//          "192.168.1.5"   → "32322-35781"
+// encodeNestCode encodes an IPv4 address into an 8-char hex code XXXX-XXXX.
+// Example: "100.86.253.68" → "6456-fd44"
+//
+//	"192.168.1.5"   → "c0a8-0105"
 func encodeNestCode(ip string) (string, error) {
 	parts := strings.Split(ip, ".")
 	if len(parts) != 4 {
@@ -24,6 +25,6 @@ func encodeNestCode(ip string) (string, error) {
 		}
 		val = val*256 + uint32(n)
 	}
-	s := fmt.Sprintf("%010d", val)
-	return s[:5] + "-" + s[5:], nil
+	s := fmt.Sprintf("%08x", val)
+	return s[:4] + "-" + s[4:], nil
 }
