@@ -31,7 +31,9 @@ func checkTailscale() tailscaleStatus {
 	if _, err := exec.LookPath("tailscale"); err != nil {
 		return tailscaleStatus{}
 	}
-	out, err := exec.Command("tailscale", "status", "--json").Output()
+	cmd := exec.Command("tailscale", "status", "--json")
+	cmd.Stderr = nil // suppress error output to terminal
+	out, err := cmd.Output()
 	if err != nil {
 		return tailscaleStatus{installed: true}
 	}
