@@ -45,7 +45,7 @@ func checkTailscale() tailscaleStatus {
 		return tailscaleStatus{installed: true}
 	}
 	switch data.BackendState {
-	case "NeedsLogin", "NoState", "NeedsMachineAuth":
+	case "NeedsLogin", "NoState", "NeedsMachineAuth", "LoggedOut":
 		return tailscaleStatus{installed: true, loggedIn: false, running: false}
 	case "Stopped":
 		return tailscaleStatus{installed: true, loggedIn: true, running: false}
@@ -58,6 +58,10 @@ func checkTailscale() tailscaleStatus {
 					break
 				}
 			}
+		}
+		// ip empty means tailscale is up but not actually connected
+		if ip == "" {
+			return tailscaleStatus{installed: true, loggedIn: true, running: false}
 		}
 		return tailscaleStatus{installed: true, loggedIn: true, running: true, ip: ip}
 	default:

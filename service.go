@@ -91,6 +91,7 @@ WantedBy=default.target
 		return err
 	}
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
+	exec.Command("loginctl", "enable-linger", os.Getenv("USER")).Run()
 	return exec.Command("systemctl", "--user", "enable", "--now", "zipp-nest").Run()
 }
 
@@ -131,6 +132,20 @@ func startServiceCmd() tea.Cmd {
 }
 
 func stopServiceCmd() tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if runtime.GOOS == "darwin" {
+			home, _ := os.UserHomeDir()
+			plist := home + "/Library/LaunchAgents/com.zipp-nest.server.plist"
+			err = exec.Command("launchctl", "unload", plist).Run()
+		} else {
+			err = exec.Command("systemctl", "--user", "stop", "zipp-nest").Run()
+		}
+		return serviceActionDoneMsg{err: err}
+	}
+}
+
+func disableServiceCmd() tea.Cmd {
 	return func() tea.Msg {
 		err := uninstallService()
 		return serviceActionDoneMsg{err: err}
