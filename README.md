@@ -1,4 +1,4 @@
-# Zipp Nest
+# zipp-nest
 
 ```
   ,~~~~~,
@@ -6,7 +6,7 @@
   `~~~~~`
 ```
 
-Server-side companion for [Zipp](https://github.com/Inspiractus01/zipp). Run it on your remote machine and send backups to it over the network — no cloud, no subscription, just your own server.
+Self-hosted backup server for [zipp](https://github.com/Inspiractus01/zipp). Run it on any machine — a VPS, Raspberry Pi, NAS, home server. Backups arrive encrypted over your private network, no cloud involved.
 
 ## Install
 
@@ -14,55 +14,29 @@ Server-side companion for [Zipp](https://github.com/Inspiractus01/zipp). Run it 
 curl -sL https://raw.githubusercontent.com/Inspiractus01/zipp-nest/main/install.sh | bash
 ```
 
+macOS and Linux · amd64 and arm64
+
+## What it does
+
+- Receives backups from zipp over the network
+- Stores snapshots per job, auto-prunes old ones
+- Built-in TUI to start/stop the server, view logs, edit settings
+- Connects via Tailscale — no open ports, no port forwarding needed
+
 ## Usage
 
-```bash
-zipp-nest serve
+```
+zipp-nest         open the TUI
+zipp-nest serve   run the server directly (no TUI)
 ```
 
-On first run it generates an auth token and starts listening on port `9090`.
+Open the TUI, press **Start server** — it registers as a background service (launchd or systemd) and keeps running after you close it.
 
-```
-  )()(
- ( ●● )  zipp-nest v0.1.0
-  \──/
-  /||\
+## Setup
 
-  token:    a3f9c2e1b4d87650...
-  port:     9090
-  storage:  ~/.zipp-nest/backups
+1. Install zipp-nest on your server, press **Start server**
+2. Go to **Connection info** — copy the short code
+3. Open zipp on your client, go to **Nest**, paste the code
+4. Press `n` on any job to set it to `[nest]` or `[nest+local]`
 
-  ─────────────────────────────────────
-  time      job                  event
-  ─────────────────────────────────────
-  14:05:01  photos               ↑ 2006-01-02_14-05-01.tar.gz  (24.3 MB)
-```
-
-## API
-
-All endpoints require `Authorization: Bearer <token>` header.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Server status |
-| `POST` | `/backups/:job` | Upload a snapshot (tar.gz body) |
-| `GET` | `/backups/:job` | List snapshots for a job |
-| `GET` | `/backups/` | List all jobs |
-
-## Config
-
-Stored at `~/.zipp-nest/config.json`:
-
-```json
-{
-  "token": "a3f9c2e1b4d87650...",
-  "port": 9090,
-  "storagePath": "/home/user/.zipp-nest/backups"
-}
-```
-
-## Connecting with Zipp
-
-Use [Tailscale](https://tailscale.com) (free) to access your nest server from anywhere without port forwarding. Once Tailscale is set up on both machines, your server is reachable at its Tailscale hostname.
-
-Support for connecting directly from the Zipp client is coming soon.
+Config: `~/.zipp-nest/config.json`
