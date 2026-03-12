@@ -29,6 +29,16 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "uninstall":
+			if err := uninstallService(); err != nil {
+				fmt.Fprintln(os.Stderr, "error stopping service:", err)
+			}
+			if err := os.Remove("/usr/local/bin/zipp-nest"); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintln(os.Stderr, "error removing binary:", err)
+				os.Exit(1)
+			}
+			fmt.Println("zipp-nest uninstalled")
+			return
 		}
 	}
 
