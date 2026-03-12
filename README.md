@@ -6,7 +6,7 @@
   `~~~~~`
 ```
 
-Self-hosted backup server for [zipp](https://github.com/Inspiractus01/zipp). Run it on any machine — a VPS, Raspberry Pi, NAS, home server. Backups arrive encrypted over your private network, no cloud involved.
+Self-hosted backup server for [zipp](https://github.com/Inspiractus01/zipp). · **[zipp.rest](https://zipp.rest)** Run it on any machine — a VPS, Raspberry Pi, NAS, home server. Backups arrive encrypted over your private network, no cloud involved.
 
 ## Install
 
