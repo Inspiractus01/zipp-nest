@@ -26,22 +26,31 @@ func saveSnapshot(storagePath, job string, data []byte) (string, error) {
 	return name, nil
 }
 
-func listSnapshots(storagePath, job string) ([]string, error) {
+type SnapshotEntry struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+func listSnapshots(storagePath, job string) ([]SnapshotEntry, error) {
 	dir := snapshotDir(storagePath, job)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return []string{}, nil
+		return []SnapshotEntry{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var snaps []string
+	var snaps []SnapshotEntry
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".tar.gz") {
-			snaps = append(snaps, e.Name())
+			var size int64
+			if info, err2 := e.Info(); err2 == nil {
+				size = info.Size()
+			}
+			snaps = append(snaps, SnapshotEntry{Name: e.Name(), Size: size})
 		}
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(snaps)))
+	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Name > snaps[j].Name })
 	return snaps, nil
 }
 
