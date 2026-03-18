@@ -24,10 +24,21 @@ func startServer(cfg *Config, logCh chan<- string) error {
 	})
 
 	mux.HandleFunc("/backups/", func(w http.ResponseWriter, r *http.Request) {
-		job := strings.TrimPrefix(r.URL.Path, "/backups/")
-		job = strings.TrimSuffix(job, "/")
-		if job == "" {
+		path := strings.TrimPrefix(r.URL.Path, "/backups/")
+		path = strings.TrimSuffix(path, "/")
+		if path == "" {
 			listAllHandler(cfg, w, r)
+			return
+		}
+		// split into job and optional snapshot name
+		parts := strings.SplitN(path, "/", 2)
+		job := parts[0]
+		if len(parts) == 2 && parts[1] != "" {
+			if r.Method == http.MethodGet {
+				downloadHandler(cfg, job, parts[1], w, r)
+			} else {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
 			return
 		}
 		switch r.Method {
@@ -79,6 +90,29 @@ func uploadHandler(cfg *Config, job string, w http.ResponseWriter, r *http.Reque
 	logLine("↑", job, fmt.Sprintf("%s  (%s)", name, size))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"snapshot": name, "size": size})
+}
+
+func downloadHandler(cfg *Config, job, snapshot string, w http.ResponseWriter, r *http.Request) {
+	// sanitize: no path traversal
+	if strings.Contains(snapshot, "/") || strings.Contains(snapshot, "..") {
+		http.Error(w, "invalid snapshot name", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(snapshotDir(cfg.StoragePath, job), snapshot)
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		http.Error(w, "snapshot not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "read error", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, snapshot))
+	io.Copy(w, f)
+	logLine("↓", job, snapshot)
 }
 
 func listHandler(cfg *Config, job string, w http.ResponseWriter, r *http.Request) {
