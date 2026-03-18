@@ -16,7 +16,10 @@ esac
 URL="https://github.com/${REPO}/releases/latest/download/${BIN}-${OS}-${ARCH}"
 
 echo "installing zipp-nest (${OS}/${ARCH})..."
-curl -sL "$URL" -o "/tmp/${BIN}"
+curl -L --fail --progress-bar "$URL" -o "/tmp/${BIN}" || {
+  echo "download failed — check https://github.com/${REPO}/releases"
+  exit 1
+}
 chmod +x "/tmp/${BIN}"
 sudo mv "/tmp/${BIN}" "${INSTALL_DIR}/${BIN}"
 
