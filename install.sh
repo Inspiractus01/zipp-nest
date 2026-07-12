@@ -46,6 +46,7 @@ else
 fi
 
 chmod +x "$TMPDL/$ASSET"
+sudo mkdir -p "${INSTALL_DIR}"
 sudo mv "$TMPDL/$ASSET" "${INSTALL_DIR}/${BIN}"
 
 echo "✓ installed to ${INSTALL_DIR}/${BIN}"
