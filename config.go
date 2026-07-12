@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 type Config struct {
 	Port        int    `json:"port"`
 	StoragePath string `json:"storagePath"`
+	Token       string `json:"token"` // bearer token clients must present
 }
 
 func configPath() string {
@@ -28,7 +31,20 @@ func loadConfig() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	// configs from before auth get a token on first load
+	if cfg.Token == "" {
+		cfg.Token = newToken()
+		if err := cfg.save(); err != nil {
+			return nil, err
+		}
+	}
 	return &cfg, nil
+}
+
+func newToken() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func defaultConfig() (*Config, error) {
@@ -36,6 +52,7 @@ func defaultConfig() (*Config, error) {
 	cfg := &Config{
 		Port:        9090,
 		StoragePath: filepath.Join(home, ".zipp-nest", "backups"),
+		Token:       newToken(),
 	}
 	if err := cfg.save(); err != nil {
 		return nil, err

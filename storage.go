@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,17 +14,47 @@ func snapshotDir(storagePath, job string) string {
 	return filepath.Join(storagePath, job)
 }
 
-func saveSnapshot(storagePath, job string, data []byte) (string, error) {
+func isSnapshotFile(name string) bool {
+	return strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tar.gz.age")
+}
+
+// saveSnapshotStream streams an upload to disk without buffering it in
+// memory. It writes to a temp file first so interrupted uploads never leave
+// a half-written snapshot behind.
+func saveSnapshotStream(storagePath, job, ext string, r io.Reader) (string, int64, error) {
 	dir := snapshotDir(storagePath, job)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
+		return "", 0, err
 	}
-	name := time.Now().Format("2006-01-02_15-04-05") + ".tar.gz"
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return "", err
+
+	tmp, err := os.CreateTemp(dir, ".upload-*")
+	if err != nil {
+		return "", 0, err
 	}
-	return name, nil
+	size, err := io.Copy(tmp, r)
+	closeErr := tmp.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+		return "", 0, err
+	}
+
+	// pick a free name; two uploads in the same second get -2, -3, …
+	base := time.Now().Format("2006-01-02_15-04-05")
+	name := base + ext
+	for i := 2; ; i++ {
+		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("%s-%d%s", base, i, ext)
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, name)); err != nil {
+		os.Remove(tmp.Name())
+		return "", 0, err
+	}
+	return name, size, nil
 }
 
 type SnapshotEntry struct {
@@ -42,7 +73,7 @@ func listSnapshots(storagePath, job string) ([]SnapshotEntry, error) {
 	}
 	var snaps []SnapshotEntry
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".tar.gz") {
+		if isSnapshotFile(e.Name()) {
 			var size int64
 			if info, err2 := e.Info(); err2 == nil {
 				size = info.Size()
@@ -65,7 +96,7 @@ func pruneSnapshotsServer(storagePath, job string, keep int) (int, error) {
 	}
 	var snaps []string
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".tar.gz") {
+		if isSnapshotFile(e.Name()) {
 			snaps = append(snaps, e.Name())
 		}
 	}

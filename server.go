@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,21 @@ import (
 
 var serverLogCh chan<- string
 
+// validJobName rejects anything that could escape the storage directory.
+func validJobName(job string) bool {
+	return job != "" && job != "." && job != ".." &&
+		!strings.ContainsAny(job, "/\\")
+}
+
+// authorized checks the bearer token in constant time.
+func authorized(cfg *Config, r *http.Request) bool {
+	if cfg.Token == "" {
+		return true
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return subtle.ConstantTimeCompare([]byte(got), []byte(cfg.Token)) == 1
+}
+
 func startServer(cfg *Config, logCh chan<- string) error {
 	serverLogCh = logCh
 
@@ -24,6 +40,11 @@ func startServer(cfg *Config, logCh chan<- string) error {
 	})
 
 	mux.HandleFunc("/backups/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(cfg, r) {
+			logLine("✗", "auth", "rejected request from "+r.RemoteAddr)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		path := strings.TrimPrefix(r.URL.Path, "/backups/")
 		path = strings.TrimSuffix(path, "/")
 		if path == "" {
@@ -33,6 +54,10 @@ func startServer(cfg *Config, logCh chan<- string) error {
 		// split into job and optional snapshot name
 		parts := strings.SplitN(path, "/", 2)
 		job := parts[0]
+		if !validJobName(job) {
+			http.Error(w, "invalid job name", http.StatusBadRequest)
+			return
+		}
 		if len(parts) == 2 && parts[1] != "" {
 			if r.Method == http.MethodGet {
 				downloadHandler(cfg, job, parts[1], w, r)
@@ -75,21 +100,22 @@ func startServer(cfg *Config, logCh chan<- string) error {
 }
 
 func uploadHandler(cfg *Config, job string, w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "read error", http.StatusInternalServerError)
-		return
+	// clients mark age-encrypted uploads via header; keep the extension
+	// so restores know whether to decrypt
+	ext := ".tar.gz"
+	if r.Header.Get("X-Zipp-Encrypted") == "age" {
+		ext = ".tar.gz.age"
 	}
-	name, err := saveSnapshot(cfg.StoragePath, job, data)
+	name, size, err := saveSnapshotStream(cfg.StoragePath, job, ext, r.Body)
 	if err != nil {
 		http.Error(w, "storage error", http.StatusInternalServerError)
 		logLine("✗", job, fmt.Sprintf("storage error: %v", err))
 		return
 	}
-	size := formatSize(int64(len(data)))
-	logLine("↑", job, fmt.Sprintf("%s  (%s)", name, size))
+	sizeStr := formatSize(size)
+	logLine("↑", job, fmt.Sprintf("%s  (%s)", name, sizeStr))
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"snapshot": name, "size": size})
+	json.NewEncoder(w).Encode(map[string]string{"snapshot": name, "size": sizeStr})
 }
 
 func downloadHandler(cfg *Config, job, snapshot string, w http.ResponseWriter, r *http.Request) {
@@ -109,7 +135,7 @@ func downloadHandler(cfg *Config, job, snapshot string, w http.ResponseWriter, r
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, snapshot))
 	io.Copy(w, f)
 	logLine("↓", job, snapshot)

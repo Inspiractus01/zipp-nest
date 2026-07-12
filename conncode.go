@@ -61,3 +61,16 @@ func encodeNestCode(ip string) (string, error) {
 	}
 	return strings.Join(words, "-"), nil
 }
+
+// fullNestCode builds the complete connection code a client pastes into
+// zipp: 4 address words plus the auth token.
+func fullNestCode(ip, token string) (string, error) {
+	code, err := encodeNestCode(ip)
+	if err != nil {
+		return "", err
+	}
+	if token != "" {
+		code += "-" + token
+	}
+	return code, nil
+}

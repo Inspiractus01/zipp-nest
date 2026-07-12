@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 var version = "dev"
@@ -29,6 +28,24 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "update":
+			result := checkForUpdate()
+			if !result.hasUpdate {
+				fmt.Println("zipp-nest v" + version + " is up to date")
+				return
+			}
+			fmt.Printf("updating zipp-nest v%s → v%s\n", version, result.latest)
+			cmd := exec.Command("bash", "-c",
+				"curl -sL https://raw.githubusercontent.com/Inspiractus01/zipp-nest/main/install.sh | bash",
+			)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Stdin = os.Stdin
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintln(os.Stderr, "update failed:", err)
+				os.Exit(1)
+			}
+			return
 		case "uninstall":
 			if err := uninstallService(); err != nil {
 				fmt.Fprintln(os.Stderr, "error stopping service:", err)
@@ -39,24 +56,6 @@ func main() {
 			}
 			fmt.Println("zipp-nest uninstalled")
 			return
-		}
-	}
-
-	if result := checkForUpdate(); result.hasUpdate {
-		fmt.Printf("\n  zipp-nest v%s → v%s  updating...\n\n", version, result.latest)
-		cmd := exec.Command("bash", "-c",
-			"curl -sL https://raw.githubusercontent.com/Inspiractus01/zipp-nest/main/install.sh | bash",
-		)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "\n  update failed: %v\n\n", err)
-		} else {
-			self, err := os.Executable()
-			if err == nil {
-				syscall.Exec(self, os.Args, os.Environ())
-			}
 		}
 	}
 
@@ -82,6 +81,9 @@ func printBanner(cfg *Config) {
 	if ts.running {
 		fmt.Printf("  tailscale:  %s\n", ts.ip)
 		fmt.Printf("  address:    %s:%d\n", ts.ip, cfg.Port)
+		if code, err := fullNestCode(ts.ip, cfg.Token); err == nil {
+			fmt.Printf("  code:       %s\n", code)
+		}
 	} else {
 		fmt.Println("  tailscale:  not connected")
 	}

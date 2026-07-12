@@ -177,7 +177,6 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resultErr = nil
 			return m, startServiceCmd()
 
-
 		case "Stop server":
 			m.resultErr = nil
 			return m, stopServiceCmd()
@@ -209,7 +208,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "Connection info":
 			lines := []string{""}
 			addEntry := func(label, ip string) {
-				code, err := encodeNestCode(ip)
+				code, err := fullNestCode(ip, m.config.Token)
 				lines = append(lines, styleDim.Render("  "+label+":"))
 				if err == nil {
 					lines = append(lines, "  "+styleAccent.Render(code), "")

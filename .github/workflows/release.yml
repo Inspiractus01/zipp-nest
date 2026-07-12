@@ -18,7 +18,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "stable"
+
+      - name: Test
+        run: go test ./...
 
       - name: Build binaries
         run: |
@@ -39,6 +42,7 @@ jobs:
               -ldflags="-s -w -X main.version=${VERSION}" \
               -o "$OUT" .
           done
+          (cd dist && sha256sum * > checksums.txt)
 
       - name: Create release
         uses: softprops/action-gh-release@v2
