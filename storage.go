@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,24 +43,93 @@ func saveSnapshotStream(storagePath, job, ext string, r io.Reader) (string, int6
 	}
 
 	// pick a free name; two uploads in the same second get -2, -3, …
-	base := time.Now().Format("2006-01-02_15-04-05")
-	name := base + ext
-	for i := 2; ; i++ {
-		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
-			break
-		}
-		name = fmt.Sprintf("%s-%d%s", base, i, ext)
-	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, name)); err != nil {
+	base := time.Now().Format(snapshotTimeLayout)
+	name, err := claimSnapshotName(dir, tmp.Name(), base, ext)
+	if err != nil {
 		os.Remove(tmp.Name())
 		return "", 0, err
 	}
 	return name, size, nil
 }
 
+// claimSnapshotName atomically hard-links tmpPath to a free name in dir
+// derived from base+ext, trying base+"-2"+ext, base+"-3"+ext, … on
+// collision. os.Link fails with an already-exists error if the target name
+// is taken, so — unlike a stat-then-rename loop — two concurrent uploads can
+// never both believe the same name is free and clobber each other.
+func claimSnapshotName(dir, tmpPath, base, ext string) (string, error) {
+	name := base + ext
+	for i := 2; ; i++ {
+		err := os.Link(tmpPath, filepath.Join(dir, name))
+		if err == nil {
+			_ = os.Remove(tmpPath) // tmp is now just a linked-away duplicate
+			return name, nil
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		name = fmt.Sprintf("%s-%d%s", base, i, ext)
+	}
+}
+
 type SnapshotEntry struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+}
+
+const snapshotTimeLayout = "2006-01-02_15-04-05"
+
+// parseSnapshotName extracts the timestamp and collision sequence number
+// encoded in a snapshot filename, e.g. "2006-01-02_15-04-05.tar.gz" (seq 1)
+// or "2006-01-02_15-04-05-2.tar.gz" (seq 2) for same-second collisions.
+func parseSnapshotName(name string) (t time.Time, seq int, ok bool) {
+	base := name
+	switch {
+	case strings.HasSuffix(base, ".tar.gz.age"):
+		base = strings.TrimSuffix(base, ".tar.gz.age")
+	case strings.HasSuffix(base, ".tar.gz"):
+		base = strings.TrimSuffix(base, ".tar.gz")
+	default:
+		return time.Time{}, 0, false
+	}
+
+	if len(base) > len(snapshotTimeLayout) && base[len(snapshotTimeLayout)] == '-' {
+		ts := base[:len(snapshotTimeLayout)]
+		n, err := strconv.Atoi(base[len(snapshotTimeLayout)+1:])
+		if err != nil {
+			return time.Time{}, 0, false
+		}
+		parsed, err := time.Parse(snapshotTimeLayout, ts)
+		if err != nil {
+			return time.Time{}, 0, false
+		}
+		return parsed, n, true
+	}
+
+	parsed, err := time.Parse(snapshotTimeLayout, base)
+	if err != nil {
+		return time.Time{}, 0, false
+	}
+	return parsed, 1, true
+}
+
+// snapshotChronoLess reports whether snapshot a happened before snapshot b.
+// Sorting by parsed timestamp (with collision sequence as tiebreaker)
+// instead of raw filename string keeps ordering correct even though '-'
+// (used before the collision suffix) sorts before '.' (used before the
+// extension), which would otherwise put "…-2.tar.gz" before "….tar.gz" even
+// though it was written later. Names that fail to parse fall back to a
+// plain string comparison rather than panicking or reordering unrelatedly.
+func snapshotChronoLess(a, b string) bool {
+	ta, sa, oka := parseSnapshotName(a)
+	tb, sb, okb := parseSnapshotName(b)
+	if !oka || !okb {
+		return a < b
+	}
+	if !ta.Equal(tb) {
+		return ta.Before(tb)
+	}
+	return sa < sb
 }
 
 func listSnapshots(storagePath, job string) ([]SnapshotEntry, error) {
@@ -81,7 +151,7 @@ func listSnapshots(storagePath, job string) ([]SnapshotEntry, error) {
 			snaps = append(snaps, SnapshotEntry{Name: e.Name(), Size: size})
 		}
 	}
-	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Name > snaps[j].Name })
+	sort.Slice(snaps, func(i, j int) bool { return snapshotChronoLess(snaps[j].Name, snaps[i].Name) }) // newest first
 	return snaps, nil
 }
 
@@ -100,7 +170,7 @@ func pruneSnapshotsServer(storagePath, job string, keep int) (int, error) {
 			snaps = append(snaps, e.Name())
 		}
 	}
-	sort.Strings(snaps) // oldest first
+	sort.Slice(snaps, func(i, j int) bool { return snapshotChronoLess(snaps[i], snaps[j]) }) // oldest first
 	deleted := 0
 	for len(snaps) > keep {
 		if err := os.Remove(filepath.Join(dir, snaps[0])); err != nil {

@@ -29,10 +29,12 @@ type model struct {
 	resultLines []string
 	resultErr   error
 	animFrame   int
+	windowWidth int
 
 	// settings form
 	settingsInputs []textinput.Model
 	settingsStep   int
+	settingsErr    error
 
 	// logs
 	logLines []string
@@ -92,6 +94,10 @@ func (m model) menuItems() []string {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.windowWidth = msg.Width
+		return m, nil
 
 	case updateCheckMsg:
 		m.updateInfo = updateResult(msg)
@@ -235,7 +241,8 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case "Settings":
 			m.settingsStep = 0
-			m.settingsInputs = newSettingsInputs(m.config)
+			m.settingsErr = nil
+			m.settingsInputs = newSettingsInputs(m.config, m.windowWidth)
 			m.page = pageSettings
 
 		case "Quit":
@@ -306,8 +313,7 @@ func (m model) viewMenu() string {
 		}
 	}
 
-	b.WriteString(styleHint.Render("\n  ↑↓ navigate · enter select · q quit"))
-	return b.String()
+	return renderPage(m.windowWidth, "MENU", b.String(), "  ↑↓ navigate · enter select · q quit")
 }
 
 func (m model) viewResult() string {
@@ -328,19 +334,13 @@ func (m model) viewResult() string {
 		b.WriteString("\n" + styleSuccess.Render("  ✓ done") + "\n")
 	}
 
-	b.WriteString(styleHint.Render("\n  enter / esc  back"))
-	return b.String()
+	return renderPage(m.windowWidth, "RESULT", b.String(), "  enter / esc  back")
 }
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
 		return tickMsg{}
 	})
-}
-
-func keyHint(key, label string, c lipgloss.Color) string {
-	return lipgloss.NewStyle().Foreground(c).Bold(true).Render(key) +
-		styleDim.Render(" "+label)
 }
 
 func runUI(cfg *Config) error {
@@ -362,15 +362,14 @@ func (m model) viewLog() string {
 		}
 	}
 
-	b.WriteString(styleHint.Render("\n  any key  back"))
-	return b.String()
+	return renderPage(m.windowWidth, "LOGS", b.String(), "  any key  back")
 }
 
-func newSettingsInputs(cfg *Config) []textinput.Model {
+func newSettingsInputs(cfg *Config, windowWidth int) []textinput.Model {
 	pathInput := textinput.New()
 	pathInput.Placeholder = "e.g. /mnt/backups or ~/zipp-nest/backups"
 	pathInput.SetValue(cfg.StoragePath)
-	pathInput.Width = 52
+	pathInput.Width = clampInt(panelWidth(windowWidth)-20, 24, 60)
 	pathInput.Focus()
 
 	portInput := textinput.New()
@@ -410,7 +409,12 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if port > 0 {
 			m.config.Port = port
 		}
-		m.config.save()
+		if err := m.config.save(); err != nil {
+			// don't act like settings were persisted when the write failed
+			m.settingsErr = err
+			return m, nil
+		}
+		m.settingsErr = nil
 		m.page = pageMenu
 		if m.srvStatus.running {
 			return m, restartServiceCmd()
@@ -432,7 +436,7 @@ func (m model) viewSettings() string {
 		lStyle := styleDim
 		var val string
 		if i == m.settingsStep {
-			lStyle = lipgloss.NewStyle().Foreground(colorTealLight)
+			lStyle = lipgloss.NewStyle().Foreground(colorAccent)
 			val = m.settingsInputs[i].View()
 		} else {
 			val = styleNormal.Render(m.settingsInputs[i].Value())
@@ -440,6 +444,9 @@ func (m model) viewSettings() string {
 		b.WriteString("  " + lStyle.Render(label+":") + "  " + val + "\n")
 	}
 
-	b.WriteString(styleHint.Render("\n  enter next · shift+tab back · esc cancel"))
-	return b.String()
+	if m.settingsErr != nil {
+		b.WriteString("\n  " + styleError.Render("✗ failed to save settings: "+m.settingsErr.Error()) + "\n")
+	}
+
+	return renderPage(m.windowWidth, "SETTINGS", b.String(), "  enter next · shift+tab back · esc cancel")
 }

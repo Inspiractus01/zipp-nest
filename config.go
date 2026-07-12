@@ -33,7 +33,11 @@ func loadConfig() (*Config, error) {
 	}
 	// configs from before auth get a token on first load
 	if cfg.Token == "" {
-		cfg.Token = newToken()
+		token, err := newToken()
+		if err != nil {
+			return nil, err
+		}
+		cfg.Token = token
 		if err := cfg.save(); err != nil {
 			return nil, err
 		}
@@ -41,18 +45,24 @@ func loadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-func newToken() string {
+func newToken() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func defaultConfig() (*Config, error) {
 	home, _ := os.UserHomeDir()
+	token, err := newToken()
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		Port:        9090,
 		StoragePath: filepath.Join(home, ".zipp-nest", "backups"),
-		Token:       newToken(),
+		Token:       token,
 	}
 	if err := cfg.save(); err != nil {
 		return nil, err

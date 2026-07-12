@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -66,7 +67,11 @@ func installLaunchd(bin string) error {
 	if err := os.WriteFile(plist, []byte(content), 0644); err != nil {
 		return err
 	}
-	exec.Command("launchctl", "unload", plist).Run()
+	// unload is expected to fail if nothing was previously loaded; log it
+	// rather than silently swallowing it so a real problem doesn't hide.
+	if err := exec.Command("launchctl", "unload", plist).Run(); err != nil {
+		logLine("✗", "service", fmt.Sprintf("launchctl unload failed: %v", err))
+	}
 	return exec.Command("launchctl", "load", plist).Run()
 }
 
@@ -90,8 +95,12 @@ WantedBy=default.target
 	if err := os.WriteFile(dir+"/zipp-nest.service", []byte(unit), 0644); err != nil {
 		return err
 	}
-	exec.Command("systemctl", "--user", "daemon-reload").Run()
-	exec.Command("loginctl", "enable-linger", os.Getenv("USER")).Run()
+	if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
+		logLine("✗", "service", fmt.Sprintf("systemctl daemon-reload failed: %v", err))
+	}
+	if err := exec.Command("loginctl", "enable-linger", os.Getenv("USER")).Run(); err != nil {
+		logLine("✗", "service", fmt.Sprintf("loginctl enable-linger failed: %v", err))
+	}
 	return exec.Command("systemctl", "--user", "enable", "--now", "zipp-nest").Run()
 }
 
@@ -99,13 +108,19 @@ func uninstallService() error {
 	if runtime.GOOS == "darwin" {
 		home, _ := os.UserHomeDir()
 		plist := home + "/Library/LaunchAgents/com.zipp-nest.server.plist"
-		exec.Command("launchctl", "unload", plist).Run()
+		if err := exec.Command("launchctl", "unload", plist).Run(); err != nil {
+			logLine("✗", "service", fmt.Sprintf("launchctl unload failed: %v", err))
+		}
 		return os.Remove(plist)
 	}
-	exec.Command("systemctl", "--user", "disable", "--now", "zipp-nest").Run()
+	if err := exec.Command("systemctl", "--user", "disable", "--now", "zipp-nest").Run(); err != nil {
+		logLine("✗", "service", fmt.Sprintf("systemctl disable failed: %v", err))
+	}
 	home, _ := os.UserHomeDir()
 	os.Remove(home + "/.config/systemd/user/zipp-nest.service")
-	exec.Command("systemctl", "--user", "daemon-reload").Run()
+	if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
+		logLine("✗", "service", fmt.Sprintf("systemctl daemon-reload failed: %v", err))
+	}
 	return nil
 }
 
@@ -160,15 +175,6 @@ func restartServiceCmd() tea.Cmd {
 			self = "zipp-nest"
 		}
 		err = installService(self)
-		return serviceActionDoneMsg{err: err}
-	}
-}
-
-func stopServerAndDisconnectCmd() tea.Cmd {
-	return func() tea.Msg {
-		err := uninstallService()
-		// best-effort tailscale down (works without sudo if operator is set)
-		exec.Command("tailscale", "down").Run()
 		return serviceActionDoneMsg{err: err}
 	}
 }

@@ -137,7 +137,12 @@ func downloadHandler(cfg *Config, job, snapshot string, w http.ResponseWriter, r
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, snapshot))
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		// headers are already sent, so the client just sees a truncated
+		// download; the best we can do here is log it for diagnosis.
+		logLine("✗", job, fmt.Sprintf("download of %s failed partway: %v", snapshot, err))
+		return
+	}
 	logLine("↓", job, snapshot)
 }
 
@@ -166,6 +171,22 @@ func logFilePath() string {
 	return filepath.Join(home, ".zipp-nest", "server.log")
 }
 
+// maxLogFileSize caps how large server.log is allowed to grow before it's
+// rotated; keeps a long-running server from filling the disk over time.
+const maxLogFileSize = 5 * 1024 * 1024 // 5MB
+
+// rotateLogIfNeeded moves the current log file to a single ".1" backup
+// (overwriting any previous one) once it exceeds maxLogFileSize, so logLine
+// always appends to a fresh file afterward. Kept intentionally simple: one
+// rotation generation, no compression, no multiple backups.
+func rotateLogIfNeeded(path string) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() < maxLogFileSize {
+		return
+	}
+	os.Rename(path, path+".1")
+}
+
 func logLine(symbol, job, msg string) {
 	line := fmt.Sprintf("  %s  %-16s  %s  %s", symbol, job, time.Now().Format("2006-01-02 15:04:05"), msg)
 	if serverLogCh != nil {
@@ -173,8 +194,10 @@ func logLine(symbol, job, msg string) {
 	} else {
 		fmt.Println(line)
 	}
-	// always append to log file
-	if f, err := os.OpenFile(logFilePath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+	// always append to log file, rotating first if it's grown too large
+	path := logFilePath()
+	rotateLogIfNeeded(path)
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
 		fmt.Fprintln(f, line)
 		f.Close()
 	}

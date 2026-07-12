@@ -50,6 +50,57 @@ func TestSaveSnapshotStreamCollision(t *testing.T) {
 	}
 }
 
+// TestSnapshotCollisionSortOrder pins down the bug where a same-second
+// collision name (base+"-2"+ext) sorted as OLDER than the base name under
+// plain string comparison, since '-' (0x2D) sorts before '.' (0x2E). That
+// broke both "newest first" listing and "oldest first" pruning: the
+// genuinely newest snapshot could be selected for deletion while the
+// genuinely older one was kept.
+func TestSnapshotCollisionSortOrder(t *testing.T) {
+	dir := t.TempDir()
+	job := filepath.Join(dir, "docs")
+	if err := os.MkdirAll(job, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// base name written first, collision-suffixed name written moments
+	// later within the same second — so the "-2" file is chronologically
+	// newer despite sorting lexicographically before the base name.
+	files := []string{
+		"2026-01-01_00-00-00.tar.gz",
+		"2026-01-01_00-00-00-2.tar.gz",
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(job, f), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	snaps, err := listSnapshots(dir, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("listed %d snapshots, want 2", len(snaps))
+	}
+	if snaps[0].Name != "2026-01-01_00-00-00-2.tar.gz" {
+		t.Errorf("newest (collision-suffixed) snapshot must sort first, got %q", snaps[0].Name)
+	}
+
+	deleted, err := pruneSnapshotsServer(dir, "docs", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+	if _, err := os.Stat(filepath.Join(job, "2026-01-01_00-00-00-2.tar.gz")); err != nil {
+		t.Error("newest (collision-suffixed) snapshot must survive pruning")
+	}
+	if _, err := os.Stat(filepath.Join(job, "2026-01-01_00-00-00.tar.gz")); err == nil {
+		t.Error("oldest snapshot should have been pruned, but it still exists")
+	}
+}
+
 func TestListAndPruneMixedExtensions(t *testing.T) {
 	dir := t.TempDir()
 	job := filepath.Join(dir, "docs")
